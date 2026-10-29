@@ -38,3 +38,30 @@ class Document(models.Model):
 
     def __str__(self):
         return self.title
+
+class MenuAccess(models.Model):
+    menu = models.ForeignKey(
+        Menu,
+        on_delete=models.CASCADE,
+        related_name="access_rules",
+    )
+    group = models.ForeignKey(
+        "auth.Group",
+        on_delete=models.CASCADE,
+        related_name="wiki_menu_access",
+    )
+
+    can_view = models.BooleanField(default=False)
+    can_create = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["menu", "group"],
+                name="unique_menu_group_access",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.menu.name} / {self.group.name}"
