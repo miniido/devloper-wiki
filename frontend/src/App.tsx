@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { PartialBlock } from "@blocknote/core";
 import WikiEditor from "./components/WikiEditor";
 import "./App.css";
+import LoginPage from "./components/LoginPage";
 
 interface Menu {
   id: number;
@@ -45,7 +46,7 @@ async function apiRequest<T>(
   return response.json();
 }
 
-function App() {
+function WikiApp({ onLogout }: { onLogout: () => Promise<void> }) {
   const [menus, setMenus] = useState<Menu[]>([]);
   const [documents, setDocuments] = useState<WikiDocument[]>([]);
   const [selectedMenu, setSelectedMenu] = useState<number | null>(null);
@@ -172,6 +173,11 @@ function App() {
         </button>
 
         <span className="header-label">Developer Wiki</span>
+        <div className="header-actions">
+          <button className="logout-button" onClick={onLogout}>
+            로그아웃
+          </button>
+        </div>
       </header>
 
       <div className="layout">
@@ -361,6 +367,133 @@ function App() {
       </div>
     </div>
   );
+}
+
+interface AuthUser {
+  id: number;
+  username: string;
+  is_staff: boolean;
+  is_superuser: boolean;
+}
+
+function App() {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [authError, setAuthError] = useState("");
+
+  async function checkLogin() {
+    const response = await fetch("/api/auth/me/", {
+      credentials: "same-origin",
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      setUser(null);
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error(`로그인 상태 확인 실패 (${response.status})`);
+    }
+
+    setUser(await response.json());
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/auth/me/", {
+      credentials: "same-origin",
+    })
+      .then(async (response) => {
+        if (response.status === 401 || response.status === 403) {
+          return null;
+        }
+
+        if (!response.ok) {
+          throw new Error(`로그인 상태 확인 실패 (${response.status})`);
+        }
+
+        return response.json() as Promise<AuthUser>;
+      })
+      .then((user) => {
+        if (!cancelled) {
+          setUser(user);
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setAuthError(err.message);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setChecking(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleLogout() {
+    setAuthError("");
+
+    try {
+      const csrfResponse = await fetch("/api/csrf/", {
+        credentials: "same-origin",
+      });
+
+      if (!csrfResponse.ok) {
+        throw new Error("보안 토큰을 가져오지 못했습니다.");
+      }
+
+      const csrfCookie = document.cookie
+        .split("; ")
+        .find((item) => item.startsWith("csrftoken="));
+
+      const token = csrfCookie
+        ? decodeURIComponent(csrfCookie.substring("csrftoken=".length))
+        : "";
+
+      const response = await fetch("/api/auth/logout/", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "X-CSRFToken": token,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`로그아웃 실패 (${response.status})`);
+      }
+
+      setUser(null);
+    } catch (err) {
+      setAuthError(
+        err instanceof Error ? err.message : "로그아웃에 실패했습니다.",
+      );
+    }
+  }
+
+  if (checking) {
+    return <div className="auth-loading">Developer Wiki</div>;
+  }
+
+  if (authError) {
+    return (
+      <div className="auth-loading">
+        <p>{authError}</p>
+        <button onClick={() => window.location.reload()}>다시 시도</button>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage onLogin={checkLogin} />;
+  }
+
+  return <WikiApp onLogout={handleLogout} />;
 }
 
 export default App;
