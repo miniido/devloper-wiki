@@ -1,14 +1,23 @@
-import { useEffect, useState } from "react";
+import { useRef } from "react";
+import { useEffect,useState } from "react";
 import type { PartialBlock } from "@blocknote/core";
 import WikiEditor from "./components/WikiEditor";
+import type { WikiEditorHandle } from "./components/WikiEditor";
 import "./App.css";
 import LoginPage from "./components/LoginPage";
+import AttachmentSection from "./components/AttachmentSection";
+import RevisionHistory from "./components/RevisionHistory";
+import MenuManager from "./components/MenuManager";
+import { sortMenusAsTree,menuAncestors } from "./menuTree";
+import Icon from "./components/Icon";
+import UserMenu from "./components/UserMenu";
 
 interface Menu {
   id: number;
   name: string;
-  parent: number | null;
+  parent: number|null;
   sort_order: number;
+  can_create: boolean;
 }
 
 interface WikiDocument {
@@ -18,77 +27,102 @@ interface WikiDocument {
   content: PartialBlock[];
   created_by: string;
   updated_at: string;
+  can_edit: boolean;
+  version: number;
 }
 
-type PageMode = "home" | "view" | "create" | "edit";
+type PageMode="home"|"view"|"create"|"edit";
 
 function getCookie(name: string): string {
-  const item = document.cookie
+  const item=document.cookie
     .split("; ")
     .find((cookie) => cookie.startsWith(`${name}=`));
 
-  return item ? decodeURIComponent(item.split("=")[1]) : "";
+  return item? decodeURIComponent(item.split("=")[1]):"";
 }
 
 async function apiRequest<T>(
   url: string,
-  options: RequestInit = {},
+  options: RequestInit={},
 ): Promise<T> {
-  const response = await fetch(url, {
+  const response=await fetch(url,{
     credentials: "same-origin",
     ...options,
   });
 
-  if (!response.ok) {
-    throw new Error(`요청 실패 (${response.status})`);
+  if(!response.ok) {
+    const result=await response.json().catch(() => ({}));
+    throw new Error(result.detail||`요청 실패 (${response.status})`);
   }
 
   return response.json();
 }
 
-function WikiApp({ onLogout }: { onLogout: () => Promise<void> }) {
-  const [menus, setMenus] = useState<Menu[]>([]);
-  const [documents, setDocuments] = useState<WikiDocument[]>([]);
-  const [selectedMenu, setSelectedMenu] = useState<number | null>(null);
-  const [selectedDoc, setSelectedDoc] = useState<WikiDocument | null>(null);
-  const [mode, setMode] = useState<PageMode>("home");
-  const [title, setTitle] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [error, setError] = useState("");
+function WikiApp({ onLogout,user }: { onLogout: () => Promise<void>; user: AuthUser; }) {
+  const editorRef = useRef<WikiEditorHandle>(null);
+  const [menus,setMenus]=useState<Menu[]>([]);
+  const [documents,setDocuments]=useState<WikiDocument[]>([]);
+  const [selectedMenu,setSelectedMenu]=useState<number|null>(null);
+  const [selectedDoc,setSelectedDoc]=useState<WikiDocument|null>(null);
+  const [mode,setMode]=useState<PageMode>("home");
+  const [title,setTitle]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [sidebarOpen,setSidebarOpen]=useState(false);
+  const [error,setError]=useState("");
+  const [searchQuery,setSearchQuery]=useState("");
+  const [searchResults,setSearchResults]=useState<WikiDocument[]>([]);
+  const [searching,setSearching]=useState(false);
+  const [menuManagement,setMenuManagement]=useState(false);
+  const canManageMenus=user.can_manage_menus;
+  const [expandedMenuIds,setExpandedMenuIds]=useState<Set<number>>(new Set());
+  const [loadingDocuments,setLoadingDocuments]=useState(false);
+  const [searched,setSearched]=useState(false);
 
   useEffect(() => {
     apiRequest<Menu[]>("/api/menus/")
       .then(setMenus)
       .catch((err) => setError(err.message));
-  }, []);
+  },[]);
 
   useEffect(() => {
-    if (selectedMenu === null) return;
+    if(selectedMenu===null) return;
 
-    const controller = new AbortController();
+    const controller=new AbortController();
 
-    apiRequest<WikiDocument[]>(`/api/documents/?menu=${selectedMenu}`, {
+    apiRequest<WikiDocument[]>(`/api/documents/?menu=${selectedMenu}`,{
       signal: controller.signal,
     })
-      .then(setDocuments)
+      .then((data) => { if(!controller.signal.aborted) { setDocuments(data); setLoadingDocuments(false); } })
       .catch((err) => {
-        if (!controller.signal.aborted) setError(err.message);
+        if(!controller.signal.aborted) { setError(err.message); setLoadingDocuments(false); }
       });
 
     return () => controller.abort();
-  }, [selectedMenu]);
+  },[selectedMenu]);
 
   function selectMenu(id: number) {
-    setSelectedMenu(id);
+    setExpandedMenuIds((previous) => {
+      const next=new Set(previous);
+      if(next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    if(selectedMenu!==id) {
+      setSelectedMenu(id);
+      setDocuments([]);
+      setLoadingDocuments(true);
+    }
     setSelectedDoc(null);
-    setDocuments([]);
     setMode("home");
-    setSidebarOpen(false);
+    setMenuManagement(false);
     setError("");
   }
 
   function openDocument(doc: WikiDocument) {
+    setExpandedMenuIds((previous) => new Set([...previous,doc.menu,...menuAncestors(menus,doc.menu).map((item) => item.id)]));
+    if(selectedMenu!==doc.menu) { setLoadingDocuments(true); setDocuments([]); }
+    setSelectedMenu(doc.menu);
+    setMenuManagement(false);
+    setSidebarOpen(false);
     setSelectedDoc(doc);
     setTitle(doc.title);
     setMode("view");
@@ -96,6 +130,13 @@ function WikiApp({ onLogout }: { onLogout: () => Promise<void> }) {
   }
 
   function createDocument() {
+    const menu=menus.find((item) => item.id===selectedMenu);
+
+    if(!menu) { setError("왼쪽에서 작성 가능한 메뉴를 먼저 선택해 주세요."); return; }
+    if(!menu.can_create) { setError("이 메뉴에는 문서 작성 권한이 없습니다."); return; }
+    setMenuManagement(false);
+    setSidebarOpen(false);
+
     setSelectedDoc(null);
     setTitle("");
     setMode("create");
@@ -103,7 +144,8 @@ function WikiApp({ onLogout }: { onLogout: () => Promise<void> }) {
   }
 
   async function saveDocument(content: unknown[]) {
-    if (!title.trim() || selectedMenu === null) {
+    if(saving) return;
+    if(!title.trim()||selectedMenu===null) {
       setError("문서 제목을 입력해 주세요.");
       return;
     }
@@ -115,13 +157,13 @@ function WikiApp({ onLogout }: { onLogout: () => Promise<void> }) {
       // CSRF 쿠키 발급
       await apiRequest("/api/csrf/");
 
-      const isEdit = mode === "edit" && selectedDoc !== null;
-      const url = isEdit
+      const isEdit=mode==="edit"&&selectedDoc!==null;
+      const url=isEdit
         ? `/api/documents/${selectedDoc.id}/`
-        : "/api/documents/";
+        :"/api/documents/";
 
-      const saved = await apiRequest<WikiDocument>(url, {
-        method: isEdit ? "PATCH" : "POST",
+      const saved=await apiRequest<WikiDocument>(url,{
+        method: isEdit? "PATCH":"POST",
         headers: {
           "Content-Type": "application/json",
           "X-CSRFToken": getCookie("csrftoken"),
@@ -130,39 +172,73 @@ function WikiApp({ onLogout }: { onLogout: () => Promise<void> }) {
           menu: selectedMenu,
           title: title.trim(),
           content,
+          version: selectedDoc?.version,
         }),
       });
 
-      const updated = await apiRequest<WikiDocument[]>(
+      const updated=await apiRequest<WikiDocument[]>(
         `/api/documents/?menu=${selectedMenu}`,
       );
 
       setDocuments(updated);
       setSelectedDoc(saved);
       setMode("view");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "저장 실패");
+    } catch(err) {
+      setError(err instanceof Error? err.message:"저장 실패");
     } finally {
       setSaving(false);
     }
   }
+  async function searchDocuments() {
+    const keyword=searchQuery.trim();
 
-  const currentMenu = menus.find((menu) => menu.id === selectedMenu);
+    if(!keyword) {
+      setSearchResults([]);
+      return;
+    }
 
+    setSearching(true);
+    setSearched(false);
+    setError("");
+
+    try {
+      const results=await apiRequest<WikiDocument[]>(
+        `/api/documents/?q=${encodeURIComponent(keyword)}`,
+      );
+
+      setSearchResults(results);
+      setSearched(true);
+    } catch(err) {
+      setError(err instanceof Error? err.message:"검색 실패");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function openSearchResult(doc: WikiDocument) {
+    openDocument(doc);
+    setSearchQuery("");
+    setSearchResults([]);
+  }
+
+  const currentMenu=menus.find((menu) => menu.id===selectedMenu);
+
+  const breadcrumb=selectedMenu===null? "팀 지식 공간":[...menuAncestors(menus,selectedMenu),currentMenu].filter(Boolean).map((menu) => menu?.name).join(" / ");
   return (
     <div className="app">
-      <header className="header">
+      <header className="header" inert={saving}>
         <button
           className="menu-toggle"
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          aria-label="메뉴 열기"
+          aria-label="메뉴 열기" aria-expanded={sidebarOpen}
         >
-          ☰
+          <Icon name="menu" />
         </button>
 
         <button
           className="brand"
           onClick={() => {
+            setMenuManagement(false);
             setSelectedMenu(null);
             setSelectedDoc(null);
             setMode("home");
@@ -172,113 +248,132 @@ function WikiApp({ onLogout }: { onLogout: () => Promise<void> }) {
           <span>Developer Wiki</span>
         </button>
 
-        <span className="header-label">Developer Wiki</span>
-        <div className="header-actions">
-          <button className="logout-button" onClick={onLogout}>
-            로그아웃
-          </button>
-        </div>
+        <nav className="header-breadcrumb" aria-label="현재 위치">{menuManagement? "관리 / 메뉴 관리":breadcrumb}</nav>
+        <UserMenu user={user} onLogout={onLogout} />
       </header>
 
       <div className="layout">
-        {sidebarOpen && (
+        {sidebarOpen&&(
           <div className="overlay" onClick={() => setSidebarOpen(false)} />
         )}
 
-        <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
-          <div className="sidebar-heading">WORKSPACE</div>
-
-          {menus.map((menu) => {
-            const isSelected = selectedMenu === menu.id;
-            const menuDocuments = isSelected ? documents : [];
-
-            return (
-              <div className="sidebar-group" key={menu.id}>
-                <button
-                  className={`sidebar-item ${isSelected ? "active" : ""}`}
-                  style={{ paddingLeft: menu.parent ? 28 : 12 }}
-                  onClick={() => selectMenu(menu.id)}
-                >
-                  <span className="sidebar-chevron">
-                    {isSelected ? "⌄" : "›"}
-                  </span>
-                  <span className="sidebar-label">{menu.name}</span>
-                </button>
-
-                {isSelected && (
-                  <div className="sidebar-documents">
-                    {menuDocuments.map((doc) => (
-                      <button
-                        key={doc.id}
-                        className={`sidebar-document ${
-                          selectedDoc?.id === doc.id ? "active" : ""
-                        }`}
-                        onClick={() => {
-                          openDocument(doc);
-                          setSidebarOpen(false);
-                        }}
-                      >
-                        <span className="sidebar-doc-icon">▤</span>
-                        <span className="sidebar-doc-title">{doc.title}</span>
-                      </button>
-                    ))}
-
-                    <button
-                      className="sidebar-add"
-                      onClick={() => {
-                        createDocument();
-                        setSidebarOpen(false);
-                      }}
-                    >
-                      + 새 문서
+        <aside className={`sidebar ${sidebarOpen? "open":""}`} inert={saving}>
+          <button className={`sidebar-home ${selectedMenu===null&&!menuManagement? "active":""}`} onClick={() => { setSelectedMenu(null); setSelectedDoc(null); setMenuManagement(false); setMode("home"); setSidebarOpen(false); }}><Icon name="search" /> 검색 및 둘러보기</button>
+          <div className="sidebar-scroll">
+            <div className="sidebar-heading">WORKSPACE <span>{menus.length}</span></div>
+            <nav aria-label="위키 메뉴">
+              {sortMenusAsTree(menus).filter(({ menu }) => menuAncestors(menus,menu.id).every((ancestor) => expandedMenuIds.has(ancestor.id))).map(({ menu,depth }) => {
+                const isSelected=selectedMenu===menu.id&&!menuManagement;
+                const expanded=expandedMenuIds.has(menu.id);
+                return (
+                  <div className="sidebar-group" key={menu.id}>
+                    <button className={`sidebar-item ${isSelected? "active":""}`} style={{ paddingLeft: 10+depth*16 }} onClick={() => selectMenu(menu.id)} aria-expanded={expanded} aria-current={isSelected? "page":undefined}>
+                      <Icon name="chevron" className={expanded? "chevron expanded":"chevron"} />
+                      <Icon name={expanded? "folderOpen":"folder"} />
+                      <span className="sidebar-label">{menu.name}</span>
                     </button>
+                    {isSelected&&expanded&&<div className="sidebar-documents" style={{ marginLeft: 26+depth*16 }}>
+                      {loadingDocuments? <p className="hint">불러오는 중…</p>:documents.map((doc) => <button key={doc.id} className={`sidebar-document ${selectedDoc?.id===doc.id? "active":""}`} onClick={() => openDocument(doc)} aria-current={selectedDoc?.id===doc.id? "page":undefined}><Icon name="file" /><span className="sidebar-doc-title">{doc.title}</span></button>)}
+                    </div>}
                   </div>
-                )}
-              </div>
-            );
-          })}
+                );
+              })}
+              {menus.length===0&&<p className="hint">접근 가능한 메뉴가 없습니다.</p>}
+            </nav>
+            {canManageMenus&&<nav className="admin-section" aria-label="관리"><div className="sidebar-heading">관리</div><button className={`sidebar-item ${menuManagement? "active":""}`} onClick={() => { setMenuManagement(true); setSidebarOpen(false); }}><Icon name="settings" />메뉴 관리</button><button className="sidebar-item" disabled title="사용자 관리는 준비 중입니다"><Icon name="users" />사용자 관리 <span className="soon">준비 중</span></button></nav>}
+          </div>
+          <div className="sidebar-footer"><button className="new-document-button" onClick={createDocument} disabled={selectedMenu!==null&&!currentMenu?.can_create} title={currentMenu&&!currentMenu.can_create? "문서 작성 권한이 없습니다":"선택한 메뉴에 새 문서 작성"}><Icon name="plus" />새 문서</button><span>함께 쌓아가는 팀의 지식</span></div>
         </aside>
 
         <main className="main">
-          {error && <div className="error">{error}</div>}
+          {error&&<div role="alert" className="error">{error}</div>}
+          {menuManagement&&canManageMenus? (
+            <MenuManager
+              onClose={() => setMenuManagement(false)}
+              onChanged={async () => {
+                const updated=await apiRequest<Menu[]>("/api/menus/");
 
-          {selectedMenu === null ? (
+                setMenus(updated);
+                setSelectedMenu(null);
+                setSelectedDoc(null);
+                setDocuments([]);
+                setMode("home");
+              }}
+            />
+          ):selectedMenu===null? (
             <div className="welcome">
               <div className="eyebrow">TEAM KNOWLEDGE</div>
               <h1>팀의 기록을 한곳에.</h1>
               <p>
                 개발 가이드와 해결 기록, 프로젝트 자료를 모아두는 공간입니다.
               </p>
-            </div>
-          ) : (
-            <div className="content-area">
-              {mode !== "view" && (
-                <div className="breadcrumb">
-                  {currentMenu?.name}
-                  {selectedDoc && ` / ${selectedDoc.title}`}
+
+              <form
+                className="wiki-search"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void searchDocuments();
+                }}
+              >
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="문서 제목, 오류 메시지, 기술명 검색..."
+                  aria-label="위키 문서 검색"
+                />
+                <button type="submit" disabled={searching}>
+                  {searching? "검색 중":"검색"}
+                </button>
+              </form>
+
+              {searched&&searchQuery.trim()&&searchResults.length===0&&<p className="hint" role="status">일치하는 문서가 없습니다. 다른 검색어로 시도해 주세요.</p>}
+              {searchQuery.trim()&&searchResults.length>0&&(
+                <div className="search-results">
+                  <div className="search-results-heading">
+                    검색 결과 · {searchResults.length}건
+                  </div>
+
+                  {searchResults.map((doc) => (
+                    <button
+                      key={doc.id}
+                      className="search-result-item"
+                      onClick={() => void openSearchResult(doc)}
+                    >
+                      <span className="search-result-title">{doc.title}</span>
+                      <span className="search-result-meta">
+                        {menus.find((menu) => menu.id===doc.menu)?.name}
+                      </span>
+                    </button>
+                  ))}
                 </div>
               )}
+            </div>
+          ):(
+            <div className="content-area">
+              <div className="breadcrumb">
+                {breadcrumb}
+                {selectedDoc&&` / ${selectedDoc.title}`}
+              </div>
 
-              {mode === "home" && (
+              {mode==="home"&&(
                 <>
                   <div className="page-heading">
                     <h1>{currentMenu?.name}</h1>
-                    <button className="primary-button" onClick={createDocument}>
-                      + 새 문서
-                    </button>
+                    <span className="count-label">{documents.length}개의 문서</span>
                   </div>
 
                   <div className="document-list">
-                    {documents.length === 0 ? (
+                    {loadingDocuments? <p className="hint">문서를 불러오는 중…</p>:documents.length===0? (
                       <p className="hint">아직 등록된 문서가 없습니다.</p>
-                    ) : (
+                    ):(
                       documents.map((doc) => (
                         <button
                           key={doc.id}
                           className="document-item"
                           onClick={() => openDocument(doc)}
                         >
-                          <span>▤</span>
+                          <Icon name="file" />
                           <span>{doc.title}</span>
                           <span className="document-date">
                             {new Date(doc.updated_at).toLocaleDateString(
@@ -292,47 +387,60 @@ function WikiApp({ onLogout }: { onLogout: () => Promise<void> }) {
                 </>
               )}
 
-              {(mode === "create" || mode === "edit") && (
-                <div className="document-page">
-                  <div className="document-toolbar">
-                    <button
-                      className="text-button"
-                      onClick={() => setMode(selectedDoc ? "view" : "home")}
-                    >
-                      ← 취소
-                    </button>
+              {((mode==="create"&&currentMenu?.can_create)||
+                (mode==="edit"&&selectedDoc?.can_edit))&&(
+                  <div className="document-page">
+                    <div className="document-topbar document-toolbar">
+                      <span className="document-location"><Icon name="edit" />{mode === "create" ? "새 문서 작성" : "문서 편집"}</span>
+                      <div className="document-actions" aria-label="문서 편집 작업">
+                        <button className="document-action-button document-action-cancel" disabled={saving} onClick={() => setMode(selectedDoc ? "view" : "home")}><Icon name="close" />취소</button>
+                        <button className="document-action-button document-action-save" disabled={saving || !title.trim()} onClick={() => { if (editorRef.current) void saveDocument(editorRef.current.getContent()); }}><Icon name="save" />{saving ? "저장 중..." : "문서 저장"}</button>
+                      </div>
+                    </div>
+
+                    <input
+                      className="document-title-input"
+                      aria-label="문서 제목"
+                      maxLength={200}
+                      disabled={saving}
+                      placeholder="문서 제목"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                    />
+
+                    <div className="document-editor-area"><WikiEditor
+                      key={`edit-${selectedDoc?.id??"new"}-${selectedDoc?.version??0}`}
+                      documentId={selectedDoc?.id}
+                      initialContent={selectedDoc?.content}
+                      editable={!saving}
+                      editorRef={editorRef}
+                    /></div>
+                    {selectedDoc&&(
+                      <div className="document-attachment-area"><AttachmentSection
+                        key={selectedDoc.id}
+                        documentId={selectedDoc.id}
+                        canEdit={selectedDoc.can_edit}
+                        editMode={true}
+                      /></div>
+                    )}
                   </div>
+                )}
 
-                  <input
-                    className="document-title-input"
-                    placeholder="문서 제목"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                  />
-
-                  <WikiEditor
-                    key={`edit-${selectedDoc?.id ?? "new"}`}
-                    initialContent={selectedDoc?.content}
-                    editable
-                    onSave={saveDocument}
-                    saving={saving}
-                  />
-                </div>
-              )}
-
-              {mode === "view" && selectedDoc && (
+              {mode==="view"&&selectedDoc&&(
                 <article className="document-page document-view">
                   <div className="document-topbar">
                     <span className="document-location">
-                      {currentMenu?.name} / 문서
+                      <Icon name="file" /> 문서
                     </span>
 
-                    <button
-                      className="secondary-button"
-                      onClick={() => setMode("edit")}
-                    >
-                      수정
-                    </button>
+                    {selectedDoc.can_edit&&(
+                      <button
+                        className="document-action-button document-action-edit"
+                        onClick={() => setMode("edit")}
+                      >
+                        <Icon name="edit" />수정
+                      </button>
+                    )}
                   </div>
 
                   <div className="document-header">
@@ -349,15 +457,46 @@ function WikiApp({ onLogout }: { onLogout: () => Promise<void> }) {
                           "ko-KR",
                         )}
                       </span>
+                      <span className="version-badge">v{selectedDoc.version}</span>
                     </div>
                   </div>
 
                   <div className="document-body">
-                    <WikiEditor
-                      key={`view-${selectedDoc.id}`}
-                      initialContent={selectedDoc.content}
-                      editable={false}
-                    />
+                    <h2 className="body-section-label"><Icon name="file" />본문</h2>
+                    <div className="document-editor-area">
+                      <WikiEditor
+                        key={`view-${selectedDoc.id}-${selectedDoc.version}`}
+                        documentId={selectedDoc.id}
+                        initialContent={selectedDoc.content}
+                        editable={false}
+                      />
+                    </div>
+
+                    <div className="document-attachment-area">
+                      <AttachmentSection
+                        key={selectedDoc.id}
+                        documentId={selectedDoc.id}
+                        canEdit={selectedDoc.can_edit}
+                        editMode={false}
+                      />
+                    </div>
+
+                    <div className="document-revision-area">
+                      <RevisionHistory
+                        key={selectedDoc.id}
+                        documentId={selectedDoc.id}
+                        currentVersion={selectedDoc.version}
+                        canEdit={selectedDoc.can_edit}
+                        onRestored={async () => {
+                          const updated=await apiRequest<WikiDocument>(
+                            `/api/documents/${selectedDoc.id}/`,
+                          );
+                          openDocument(updated);
+                          const list=await apiRequest<WikiDocument[]>(`/api/documents/?menu=${updated.menu}`);
+                          setDocuments(list);
+                        }}
+                      />
+                    </div>
                   </div>
                 </article>
               )}
@@ -374,24 +513,27 @@ interface AuthUser {
   username: string;
   is_staff: boolean;
   is_superuser: boolean;
+  role: string;
+  role_label: string;
+  can_manage_menus: boolean;
 }
 
 function App() {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [checking, setChecking] = useState(true);
-  const [authError, setAuthError] = useState("");
+  const [user,setUser]=useState<AuthUser|null>(null);
+  const [checking,setChecking]=useState(true);
+  const [authError,setAuthError]=useState("");
 
   async function checkLogin() {
-    const response = await fetch("/api/auth/me/", {
+    const response=await fetch("/api/auth/me/",{
       credentials: "same-origin",
     });
 
-    if (response.status === 401 || response.status === 403) {
+    if(response.status===401||response.status===403) {
       setUser(null);
       return;
     }
 
-    if (!response.ok) {
+    if(!response.ok) {
       throw new Error(`로그인 상태 확인 실패 (${response.status})`);
     }
 
@@ -399,64 +541,64 @@ function App() {
   }
 
   useEffect(() => {
-    let cancelled = false;
+    let cancelled=false;
 
-    fetch("/api/auth/me/", {
+    fetch("/api/auth/me/",{
       credentials: "same-origin",
     })
       .then(async (response) => {
-        if (response.status === 401 || response.status === 403) {
+        if(response.status===401||response.status===403) {
           return null;
         }
 
-        if (!response.ok) {
+        if(!response.ok) {
           throw new Error(`로그인 상태 확인 실패 (${response.status})`);
         }
 
         return response.json() as Promise<AuthUser>;
       })
       .then((user) => {
-        if (!cancelled) {
+        if(!cancelled) {
           setUser(user);
         }
       })
       .catch((err: Error) => {
-        if (!cancelled) {
+        if(!cancelled) {
           setAuthError(err.message);
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if(!cancelled) {
           setChecking(false);
         }
       });
 
     return () => {
-      cancelled = true;
+      cancelled=true;
     };
-  }, []);
+  },[]);
 
   async function handleLogout() {
     setAuthError("");
 
     try {
-      const csrfResponse = await fetch("/api/csrf/", {
+      const csrfResponse=await fetch("/api/csrf/",{
         credentials: "same-origin",
       });
 
-      if (!csrfResponse.ok) {
+      if(!csrfResponse.ok) {
         throw new Error("보안 토큰을 가져오지 못했습니다.");
       }
 
-      const csrfCookie = document.cookie
+      const csrfCookie=document.cookie
         .split("; ")
         .find((item) => item.startsWith("csrftoken="));
 
-      const token = csrfCookie
+      const token=csrfCookie
         ? decodeURIComponent(csrfCookie.substring("csrftoken=".length))
-        : "";
+        :"";
 
-      const response = await fetch("/api/auth/logout/", {
+      const response=await fetch("/api/auth/logout/",{
         method: "POST",
         credentials: "same-origin",
         headers: {
@@ -464,23 +606,23 @@ function App() {
         },
       });
 
-      if (!response.ok) {
+      if(!response.ok) {
         throw new Error(`로그아웃 실패 (${response.status})`);
       }
 
       setUser(null);
-    } catch (err) {
+    } catch(err) {
       setAuthError(
-        err instanceof Error ? err.message : "로그아웃에 실패했습니다.",
+        err instanceof Error? err.message:"로그아웃에 실패했습니다.",
       );
     }
   }
 
-  if (checking) {
+  if(checking) {
     return <div className="auth-loading">Developer Wiki</div>;
   }
 
-  if (authError) {
+  if(authError) {
     return (
       <div className="auth-loading">
         <p>{authError}</p>
@@ -489,11 +631,11 @@ function App() {
     );
   }
 
-  if (!user) {
+  if(!user) {
     return <LoginPage onLogin={checkLogin} />;
   }
 
-  return <WikiApp onLogout={handleLogout} />;
+  return <WikiApp user={user} onLogout={handleLogout} />;
 }
 
 export default App;

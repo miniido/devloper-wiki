@@ -133,3 +133,5 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
 ]
+
+MEDIA_ROOT = BASE_DIR / "storage"

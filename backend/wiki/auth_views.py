@@ -8,7 +8,15 @@ from django.views.decorators.http import require_GET, require_POST
 
 
 def user_data(user):
+    groups = set(user.groups.values_list("name", flat=True))
+    role = next((name for name in ("SYSTEM_ADMIN", "WIKI_ADMIN", "AUTHOR", "VIEWER") if name in groups), "VIEWER")
+    if user.is_superuser:
+        role = "SYSTEM_ADMIN"
+    can_manage = any(user.has_perm(f"wiki.{action}_menu") for action in ("add", "change", "delete"))
     return {
+        "role": role,
+        "role_label": {"SYSTEM_ADMIN": "관리자", "WIKI_ADMIN": "관리자", "AUTHOR": "작성자", "VIEWER": "열람자"}[role],
+        "can_manage_menus": can_manage,
         "id": user.id,
         "username": user.get_username(),
         "is_staff": user.is_staff,

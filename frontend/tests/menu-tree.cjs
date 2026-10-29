@@ -1,0 +1,15 @@
+const assert = require('node:assert/strict');
+const ts = require('typescript');
+const fs = require('node:fs');
+const path = require('node:path');
+const compiled = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/menuTree.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+const moduleData = { exports: {} };
+new Function('exports', compiled)(moduleData.exports);
+const { sortMenusAsTree, menuAncestors } = moduleData.exports;
+const menus = [{ id: 3, parent: 2, sort_order: 0 }, { id: 2, parent: 1, sort_order: 1 }, { id: 1, parent: null, sort_order: 0 }, { id: 4, parent: 99, sort_order: 2 }];
+assert.deepEqual(sortMenusAsTree(menus).map(({ menu, depth }) => [menu.id, depth]), [[1, 0], [2, 1], [3, 2], [4, 0]]);
+assert.deepEqual(menuAncestors(menus, 3).map(menu => menu.id), [1, 2]);
+const cycle = [{ id: 1, parent: 2, sort_order: 0 }, { id: 2, parent: 1, sort_order: 0 }];
+assert.equal(sortMenusAsTree(cycle).length, 2);
+assert.equal(menuAncestors(cycle, 1).length, 1);
+console.log('PASS: tree order, recursive depth, hidden parents, ancestors, cycle safety');
