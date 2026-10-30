@@ -1,0 +1,25 @@
+.um-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--border); margin-bottom: 28px; }
+.um-tabs button { min-height: 38px; padding: 0 2px 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 13px; }
+.um-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: #414b39; font-weight: 600; }
+.um-tabs button:hover:not(:disabled) { color: var(--text); }
+.registration-list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.registration-list-toolbar > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.registration-filter-control { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; flex-shrink: 0; }
+.registration-list-toolbar select { padding: 7px 28px 7px 10px; min-height: 34px; border: 1px solid var(--border); border-radius: 5px; background: white; color: var(--text); font-size: 12px; }
+.registration-status { white-space: nowrap; padding: 3px 7px; border-radius: 4px; background: #f0f0ec; color: #777870; font-size: 10px; font-weight: 400; }
+.registration-status.pending { background: #f6f2e7; color: #897443; }
+.registration-status.approved { background: #ecf0e5; color: #5b6c4d; }
+.registration-status.rejected { background: #f6efec; color: #956b5c; }
+.registration-list-item strong { font-size: 12px; }
+.registration-empty { font-size: 12px; color: var(--muted); line-height: 1.9; padding: 14px 10px; }
+.registration-detail dl { display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px; margin: 0 0 26px; }
+.registration-detail dt { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+.registration-detail dd { margin: 0; font-size: 12px; overflow-wrap: anywhere; line-height: 1.8; }
+.registration-reason { border-top: 1px solid var(--border); padding-top: 22px; }
+.registration-reason h3 { margin: 0 0 12px; font-size: 12px; font-weight: 600; }
+.registration-reason p { font-size: 13px; line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.registration-review-help, .registration-reviewed { font-size: 11px; color: var(--muted); line-height: 1.8; margin: 28px 0 0; }
+.registration-review-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.registration-reject { color: #926555; }
+.registration-pagination { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 22px; font-size: 11px; color: var(--muted); }
+@media (max-width: 768px) { .registration-list-toolbar { align-items: flex-start; flex-wrap: wrap; } .registration-filter-control { margin-left: auto; } .registration-detail dl { grid-template-columns: 1fr; gap: 18px; } }

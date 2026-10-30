@@ -8,10 +8,13 @@ import LoginPage from "./components/LoginPage";
 import AttachmentSection from "./components/AttachmentSection";
 import RevisionHistory from "./components/RevisionHistory";
 import MenuManager from "./components/MenuManager";
+import type { MenuManagerHandle } from "./components/MenuManager";
 import { sortMenusAsTree, menuAncestors } from "./menuTree";
 import Icon from "./components/Icon";
 import UserMenu from "./components/UserMenu";
 import UserManager from "./components/UserManager";
+import DocumentAccessManager from "./components/DocumentAccessManager";
+import type { DocumentAccessManagerHandle } from "./components/DocumentAccessManager";
 
 interface Menu {
   id: number;
@@ -19,6 +22,7 @@ interface Menu {
   parent: number | null;
   sort_order: number;
   can_create: boolean;
+  can_manage_document_access: boolean;
 }
 
 interface WikiDocument {
@@ -29,6 +33,10 @@ interface WikiDocument {
   created_by: string;
   updated_at: string;
   can_edit: boolean;
+  can_view: boolean;
+  can_delete_revisions: boolean;
+  can_manage_access: boolean;
+  use_custom_permissions: boolean;
   version: number;
 }
 
@@ -66,6 +74,21 @@ function WikiApp({
   onLogout: () => Promise<void>;
   user: AuthUser;
 }) {
+  const draftAccessRef = useRef<DocumentAccessManagerHandle>(null);
+  const [editAccessOpen, setEditAccessOpen] = useState(false);
+  const [draftAccessReady, setDraftAccessReady] = useState(false);
+  const [draftCustom, setDraftCustom] = useState(false);
+  const documentAccessRef = useRef<DocumentAccessManagerHandle>(null);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [accessNotice, setAccessNotice] = useState("");
+  const [accessSaving, setAccessSaving] = useState(false);
+  const menuManagerRef = useRef<MenuManagerHandle>(null);
+  function confirmNavigation() {
+    if (saving) return false;
+    const allowed = (menuManagerRef.current?.confirmLeave() ?? true) && (documentAccessRef.current?.confirmLeave() ?? true) && (draftAccessRef.current?.confirmLeave() ?? true);
+    if (allowed) setAccessNotice("");
+    return allowed;
+  }
   const editorRef = useRef<WikiEditorHandle>(null);
   const [menus, setMenus] = useState<Menu[]>([]);
   const [documents, setDocuments] = useState<WikiDocument[]>([]);
@@ -139,6 +162,7 @@ function WikiApp({
   }, []);
 
   function selectMenu(id: number) {
+    if (!confirmNavigation()) return;
     setExpandedMenuIds((previous) => {
       const next = new Set(previous);
       if (next.has(id)) next.delete(id);
@@ -150,6 +174,9 @@ function WikiApp({
       setDocuments([]);
       setLoadingDocuments(true);
     }
+    setAccessOpen(false);
+    setEditAccessOpen(false);
+    setDraftCustom(false);
     setSelectedDoc(null);
     setMode("home");
     setMenuManagement(false);
@@ -158,6 +185,7 @@ function WikiApp({
   }
 
   function openDocument(doc: WikiDocument) {
+    if (!confirmNavigation()) return;
     setExpandedMenuIds(
       (previous) =>
         new Set([
@@ -172,7 +200,11 @@ function WikiApp({
     }
     setSelectedMenu(doc.menu);
     setMenuManagement(false);
+    setUserManagement(false);
     setSidebarOpen(false);
+    setAccessOpen(false);
+    setEditAccessOpen(false);
+    setDraftCustom(doc.use_custom_permissions);
     setSelectedDoc(doc);
     setTitle(doc.title);
     setMode("view");
@@ -180,6 +212,7 @@ function WikiApp({
   }
 
   function createDocument() {
+    if (!confirmNavigation()) return;
     const menu = menus.find((item) => item.id === selectedMenu);
 
     if (!menu) {
@@ -191,12 +224,39 @@ function WikiApp({
       return;
     }
     setMenuManagement(false);
+    setUserManagement(false);
     setSidebarOpen(false);
 
+    setAccessOpen(false);
+    setEditAccessOpen(false);
+    setDraftCustom(false);
     setSelectedDoc(null);
     setTitle("");
     setMode("create");
     setError("");
+  }
+
+  async function refreshDocumentAccess() {
+    if (!selectedDoc) return;
+    setDocuments([]);
+    setSearchResults([]);
+    const response = await fetch(`/api/documents/${selectedDoc.id}/`, { credentials: "same-origin" });
+    if (response.status === 403 || response.status === 404) {
+      setSelectedDoc(null);
+      setAccessOpen(false);
+      setMode("home");
+      setAccessNotice("문서 접근 권한이 저장되었습니다.");
+      setError("권한이 변경되어 이 문서를 더 이상 열람할 수 없습니다.");
+    } else {
+      if (!response.ok) throw new Error("문서 상태를 갱신하지 못했습니다.");
+      const updated = await response.json() as WikiDocument;
+      setSelectedDoc(updated);
+      if (!updated.can_manage_access) {
+        setAccessOpen(false);
+        setAccessNotice("문서 접근 권한이 저장되었습니다. 현재 계정의 권한에 맞춰 화면을 갱신했습니다.");
+      }
+    }
+    if (selectedMenu !== null) setDocuments(await apiRequest<WikiDocument[]>(`/api/documents/?menu=${selectedMenu}`));
   }
 
   async function saveDocument(content: unknown[]) {
@@ -206,6 +266,12 @@ function WikiApp({
       return;
     }
 
+    if (canConfigureDraft && !draftAccessRef.current?.isReady()) {
+      setEditAccessOpen(true);
+      setError("권한 설정을 불러온 뒤 문서를 저장해 주세요.");
+      return;
+    }
+    const accessDraft = canConfigureDraft && draftAccessRef.current?.isDirty() ? draftAccessRef.current.getDraft() : null;
     setSaving(true);
     setError("");
 
@@ -229,16 +295,27 @@ function WikiApp({
           title: title.trim(),
           content,
           version: selectedDoc?.version,
+          ...(accessDraft ?? {}),
         }),
       });
 
-      const updated = await apiRequest<WikiDocument[]>(
-        `/api/documents/?menu=${selectedMenu}`,
-      );
-
-      setDocuments(updated);
-      setSelectedDoc(saved);
-      setMode("view");
+      setEditAccessOpen(false);
+      setAccessOpen(false);
+      setSearchResults([]);
+      if (saved.can_view === false) {
+        setSelectedDoc(null);
+        setMode("home");
+        setAccessNotice("문서는 저장되었습니다. 변경된 권한에 따라 이 문서는 더 이상 열람할 수 없습니다.");
+      } else {
+        setSelectedDoc(saved);
+        setMode("view");
+      }
+      try {
+        setDocuments(await apiRequest<WikiDocument[]>(`/api/documents/?menu=${selectedMenu}`));
+      } catch {
+        setDocuments([]);
+        setError("문서는 저장되었지만 목록 갱신에 실패했습니다. 새로고침해 주세요.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "저장 실패");
     } finally {
@@ -278,6 +355,7 @@ function WikiApp({
   }
 
   const currentMenu = menus.find((menu) => menu.id === selectedMenu);
+  const canConfigureDraft = mode === "create" ? !!currentMenu?.can_manage_document_access : mode === "edit" && !!selectedDoc?.can_manage_access;
 
   const breadcrumb =
     selectedMenu === null
@@ -301,10 +379,14 @@ function WikiApp({
         <button
           className="brand"
           onClick={() => {
+            if (!confirmNavigation()) return;
             setMenuManagement(false);
             setUserManagement(false);
             setSelectedMenu(null);
-            setSelectedDoc(null);
+            setAccessOpen(false);
+    setEditAccessOpen(false);
+    setDraftCustom(false);
+    setSelectedDoc(null);
             setMode("home");
           }}
         >
@@ -313,9 +395,9 @@ function WikiApp({
         </button>
 
         <nav className="header-breadcrumb" aria-label="현재 위치">
-          {menuManagement ? "관리 / 메뉴 관리" : breadcrumb}
+          {userManagement ? "관리 / 사용자 관리" : menuManagement ? "관리 / 메뉴 관리" : breadcrumb}
         </nav>
-        <UserMenu user={user} onLogout={onLogout} />
+        <UserMenu user={user} onLogout={async () => { if (confirmNavigation()) await onLogout(); }} />
       </header>
 
       <div className="layout">
@@ -328,11 +410,16 @@ function WikiApp({
           inert={saving}
         >
           <button
-            className={`sidebar-home ${selectedMenu === null && !menuManagement ? "active" : ""}`}
+            className={`sidebar-home ${selectedMenu === null && !menuManagement && !userManagement ? "active" : ""}`}
             onClick={() => {
+              if (!confirmNavigation()) return;
               setSelectedMenu(null);
-              setSelectedDoc(null);
+              setAccessOpen(false);
+    setEditAccessOpen(false);
+    setDraftCustom(false);
+    setSelectedDoc(null);
               setMenuManagement(false);
+              setUserManagement(false);
               setMode("home");
               setSidebarOpen(false);
             }}
@@ -405,12 +492,13 @@ function WikiApp({
                 <p className="hint">접근 가능한 메뉴가 없습니다.</p>
               )}
             </nav>
-            {canManageMenus && (
+            {(canManageMenus || canManageUsers) && (
               <nav className="admin-section" aria-label="관리">
                 <div className="sidebar-heading">관리</div>
-                <button
+                {canManageMenus && <button
                   className={`sidebar-item ${menuManagement ? "active" : ""}`}
                   onClick={() => {
+                    if (!confirmNavigation()) return;
                     setMenuManagement(true);
                     setUserManagement(false);
                     setSidebarOpen(false);
@@ -418,26 +506,22 @@ function WikiApp({
                 >
                   <Icon name="settings" />
                   메뉴 관리
-                </button>
+                </button>}
                 {canManageUsers && (
                   <button
                     type="button"
+                    className={`sidebar-item ${userManagement ? "active" : ""}`}
+                    aria-current={userManagement ? "page" : undefined}
                     onClick={() => {
+                      if (!confirmNavigation()) return;
                       setUserManagement(true);
+                      setSidebarOpen(false);
                       setMenuManagement(false);
                     }}
                   >
-                    사용자 관리
+                    <Icon name="users" />사용자 관리
                   </button>
                 )}
-                <button
-                  className="sidebar-item"
-                  disabled
-                  title="사용자 관리는 준비 중입니다"
-                >
-                  <Icon name="users" />
-                  사용자 관리 <span className="soon">준비 중</span>
-                </button>
               </nav>
             )}
           </div>
@@ -459,22 +543,27 @@ function WikiApp({
         </aside>
 
         <main className="main">
+          {accessNotice && <p className="menu-access-notice document-access-result" role="status">{accessNotice}</p>}
           {error && (
             <div role="alert" className="error">
               {error}
             </div>
           )}
-          {userManagement ? (
-            <UserManager currentUserId={user.id} />
+          {userManagement && canManageUsers ? (
+            <UserManager currentUserId={user.id} onClose={() => setUserManagement(false)} />
           ) : menuManagement && canManageMenus ? (
             <MenuManager
+              navigationRef={menuManagerRef}
               onClose={() => setMenuManagement(false)}
               onChanged={async () => {
                 const updated = await apiRequest<Menu[]>("/api/menus/");
 
                 setMenus(updated);
                 setSelectedMenu(null);
-                setSelectedDoc(null);
+                setAccessOpen(false);
+    setEditAccessOpen(false);
+    setDraftCustom(false);
+    setSelectedDoc(null);
                 setDocuments([]);
                 setMode("home");
               }}
@@ -589,14 +678,15 @@ function WikiApp({
                       <button
                         className="document-action-button document-action-cancel"
                         disabled={saving}
-                        onClick={() => setMode(selectedDoc ? "view" : "home")}
+                        onClick={() => { if (confirmNavigation()) { setEditAccessOpen(false); setMode(selectedDoc ? "view" : "home"); } }}
                       >
                         <Icon name="close" />
                         취소
                       </button>
+                      {canConfigureDraft && <button className="document-action-button document-action-edit" disabled={saving} aria-expanded={editAccessOpen} aria-controls="document-edit-access" onClick={() => setEditAccessOpen(!editAccessOpen)}><Icon name="shield" />권한 설정<span className="document-access-mode-label">{draftCustom ? "사용자 지정" : "메뉴 권한"}</span></button>}
                       <button
                         className="document-action-button document-action-save"
-                        disabled={saving || !title.trim()}
+                        disabled={saving || !title.trim() || (canConfigureDraft && !draftAccessReady)}
                         onClick={() => {
                           if (editorRef.current)
                             void saveDocument(editorRef.current.getContent());
@@ -608,6 +698,7 @@ function WikiApp({
                     </div>
                   </div>
 
+                  {canConfigureDraft && <div id="document-edit-access" hidden={!editAccessOpen}><DocumentAccessManager key={`draft-${selectedDoc?.id ?? `new-${selectedMenu}`}`} documentId={selectedDoc?.id} menuId={selectedMenu ?? undefined} deferred disabled={saving} navigationRef={draftAccessRef} onReadyChange={setDraftAccessReady} onModeChange={setDraftCustom} onSavingChange={setAccessSaving} onSaved={refreshDocumentAccess} onClose={() => setEditAccessOpen(false)} /></div>}
                   <input
                     className="document-title-input"
                     aria-label="문서 제목"
@@ -647,17 +738,14 @@ function WikiApp({
                       <Icon name="file" /> 문서
                     </span>
 
-                    {selectedDoc.can_edit && (
-                      <button
-                        className="document-action-button document-action-edit"
-                        onClick={() => setMode("edit")}
-                      >
-                        <Icon name="edit" />
-                        수정
-                      </button>
-                    )}
+                    <div className="document-actions">
+                      {selectedDoc.use_custom_permissions && <span className="document-access-badge">CUSTOM</span>}
+                      {selectedDoc.can_manage_access && <button className="document-action-button document-action-edit" disabled={accessSaving} aria-expanded={accessOpen} aria-controls={`document-access-${selectedDoc.id}`} onClick={() => { if (!accessOpen || (documentAccessRef.current?.confirmLeave() ?? true)) setAccessOpen(!accessOpen); }}><Icon name="shield" />접근 권한</button>}
+                      {selectedDoc.can_edit && <button className="document-action-button document-action-edit" disabled={accessSaving} onClick={() => { if (confirmNavigation()) { setAccessOpen(false); setMode("edit"); } }}><Icon name="edit" />수정</button>}
+                    </div>
                   </div>
 
+                  {accessOpen && selectedDoc.can_manage_access && <DocumentAccessManager key={selectedDoc.id} documentId={selectedDoc.id} navigationRef={documentAccessRef} onSavingChange={setAccessSaving} onSaved={refreshDocumentAccess} onClose={() => setAccessOpen(false)} />}
                   <div className="document-header">
                     <h1 className="document-title">{selectedDoc.title}</h1>
 
@@ -706,7 +794,8 @@ function WikiApp({
                         key={selectedDoc.id}
                         documentId={selectedDoc.id}
                         currentVersion={selectedDoc.version}
-                        canEdit={selectedDoc.can_edit}
+                        canEdit={selectedDoc.can_edit && !accessOpen}
+                        canDelete={selectedDoc.can_delete_revisions && !accessOpen}
                         onRestored={async () => {
                           const updated = await apiRequest<WikiDocument>(
                             `/api/documents/${selectedDoc.id}/`,

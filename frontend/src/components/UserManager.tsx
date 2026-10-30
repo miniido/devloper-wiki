@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import "./UserManager.css";
+import Icon from "./Icon";
+import RegistrationManager from "./RegistrationManager";
+import { roleLabel } from "../roleLabels";
 
 interface WikiUser {
   id: number;
@@ -18,6 +21,7 @@ interface ManagementResponse {
 
 interface Props {
   currentUserId: number;
+  onClose: () => void;
 }
 
 type FormState = {
@@ -88,7 +92,9 @@ function formFromUser(user: WikiUser): FormState {
   };
 }
 
-export default function UserManager({ currentUserId }: Props) {
+export default function UserManager({ currentUserId, onClose }: Props) {
+  const [tab, setTab] = useState<"users" | "requests">("users");
+  const [reviewBusy, setReviewBusy] = useState(false);
   const [users, setUsers] = useState<WikiUser[]>([]);
   const [roles, setRoles] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -249,25 +255,36 @@ export default function UserManager({ currentUserId }: Props) {
           <h1>사용자 관리</h1>
           <p>팀원 계정과 접근 역할을 관리합니다.</p>
         </div>
-        <button
-          className="um-primary"
+        <div className="um-header-actions"><button className="text-button" onClick={onClose} disabled={busy || reviewBusy}><Icon name="close" />닫기</button>
+        {tab === "users" && <button
+          className="primary-button"
           type="button"
           onClick={startCreate}
-          disabled={loading || roles.length === 0}
+          disabled={loading || busy || roles.length === 0}
         >
-          + 사용자 추가
-        </button>
+          <Icon name="plus" />사용자 추가
+        </button>}</div>
       </div>
 
-      {error && <div className="um-error">{error}</div>}
-      {notice && <div className="um-notice">{notice}</div>}
+      <div className="um-tabs" role="tablist" aria-label="사용자 관리 항목" onKeyDown={(event) => {
+        if (busy || reviewBusy || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const next = event.key === "Home" ? "users" : event.key === "End" ? "requests" : tab === "users" ? "requests" : "users";
+        setTab(next); document.getElementById(`um-tab-${next}`)?.focus();
+      }}>
+        <button id="um-tab-users" role="tab" aria-selected={tab === "users"} aria-controls="um-panel-users" tabIndex={tab === "users" ? 0 : -1} disabled={busy || reviewBusy} onClick={() => setTab("users")}>전체 사용자</button>
+        <button id="um-tab-requests" role="tab" aria-selected={tab === "requests"} aria-controls="um-panel-requests" tabIndex={tab === "requests" ? 0 : -1} disabled={busy || reviewBusy} onClick={() => setTab("requests")}>가입 신청</button>
+      </div>
+      <div id="um-panel-users" role="tabpanel" aria-labelledby="um-tab-users" hidden={tab !== "users"}>
+      {error && <div className="um-error" role="alert">{error}</div>}
+      {notice && <div className="um-notice" role="status">{notice}</div>}
 
       {loading ? (
         <p className="um-muted">사용자 정보를 불러오는 중...</p>
       ) : (
         <div className="um-layout">
           <aside className="um-list-panel">
-            <div className="um-search">
+            <div className="um-search"><Icon name="search" />
               <input
                 type="search"
                 value={query}
@@ -286,6 +303,8 @@ export default function UserManager({ currentUserId }: Props) {
                 className={`um-user ${
                   !creating && selectedId === user.id ? "selected" : ""
                 }`}
+                aria-pressed={!creating && selectedId === user.id}
+                disabled={busy}
                 onClick={() => chooseUser(user)}
               >
                 <span className="um-avatar">
@@ -293,8 +312,8 @@ export default function UserManager({ currentUserId }: Props) {
                 </span>
 
                 <span className="um-user-info">
-                  <strong>{user.username}</strong>
-                  <small>{user.roles.join(", ") || "역할 없음"}</small>
+                  <strong>{`${user.last_name}${user.first_name}` || user.username}{user.id === currentUserId && <span className="um-self-badge">나</span>}</strong>
+                  <small>{user.username} · {user.is_superuser ? "시스템 관리자" : user.roles.map(roleLabel).join(", ") || "역할 없음"}</small>
                 </span>
 
                 <span
@@ -302,7 +321,7 @@ export default function UserManager({ currentUserId }: Props) {
                     user.is_active ? "active" : "inactive"
                   }`}
                   title={user.is_active ? "활성" : "비활성"}
-                />
+                >{user.is_active ? "활성" : "비활성"}</span>
               </button>
             ))}
 
@@ -314,6 +333,7 @@ export default function UserManager({ currentUserId }: Props) {
           <div className="um-detail">
             {!creating && !selectedUser ? (
               <div className="um-placeholder">
+                <span className="um-placeholder-icon"><Icon name="users" /></span>
                 <strong>사용자를 선택해 주세요.</strong>
                 <p>계정 정보를 조회하거나 새 사용자를 추가할 수 있습니다.</p>
               </div>
@@ -326,6 +346,7 @@ export default function UserManager({ currentUserId }: Props) {
                   )}
                 </div>
 
+                {isSelf && <p className="um-self-info"><Icon name="shield" />현재 로그인한 계정입니다. 이 화면에서는 본인 정보를 변경할 수 없습니다.</p>}
                 <div className="um-fields">
                   <label htmlFor="um-username">아이디</label>
                   <input
@@ -388,7 +409,7 @@ export default function UserManager({ currentUserId }: Props) {
                     </option>
                     {roles.map((role) => (
                       <option key={role} value={role}>
-                        {role}
+                        {roleLabel(role)}
                       </option>
                     ))}
                   </select>
@@ -433,7 +454,7 @@ export default function UserManager({ currentUserId }: Props) {
                 <div className="um-actions">
                   <button
                     type="button"
-                    className="um-primary"
+                    className="primary-button"
                     disabled={
                       busy ||
                       isSelf ||
@@ -443,6 +464,7 @@ export default function UserManager({ currentUserId }: Props) {
                     }
                     onClick={() => void saveUser()}
                   >
+                    <Icon name="save" />
                     {busy
                       ? "처리 중..."
                       : creating
@@ -461,15 +483,16 @@ export default function UserManager({ currentUserId }: Props) {
                     {!resetPasswordOpen ? (
                       <button
                         type="button"
-                        className="um-secondary"
+                        className="secondary-button"
                         onClick={() => setResetPasswordOpen(true)}
                       >
-                        비밀번호 변경
+                        <Icon name="lock" />비밀번호 변경
                       </button>
                     ) : (
                       <div className="um-reset-form">
                         <input
                           type="password"
+                          aria-label="새 비밀번호"
                           placeholder="새 비밀번호"
                           autoComplete="new-password"
                           value={newPassword}
@@ -478,21 +501,22 @@ export default function UserManager({ currentUserId }: Props) {
                         />
                         <button
                           type="button"
-                          className="um-secondary"
+                          className="secondary-button"
                           disabled={busy || !newPassword}
                           onClick={() => void resetPassword()}
                         >
-                          변경 확인
+                          <Icon name="save" />변경 확인
                         </button>
                         <button
                           type="button"
-                          className="um-text-button"
+                          className="text-button"
+                          disabled={busy}
                           onClick={() => {
                             setResetPasswordOpen(false);
                             setNewPassword("");
                           }}
                         >
-                          취소
+                          <Icon name="close" />취소
                         </button>
                       </div>
                     )}
@@ -503,6 +527,8 @@ export default function UserManager({ currentUserId }: Props) {
           </div>
         </div>
       )}
+      </div>
+      {tab === "requests" && <div id="um-panel-requests" role="tabpanel" aria-labelledby="um-tab-requests"><RegistrationManager onApproved={loadUsers} onBusyChange={setReviewBusy} /></div>}
     </section>
   );
 }

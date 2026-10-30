@@ -1,3 +1,6 @@
+from .registration_views import RegistrationRequestView, RegistrationManagementView, RegistrationReviewView
+from .document_access_views import DocumentAccessManagementView, DocumentAccessOptionsView
+from .revision_views import DocumentRevisionDeleteView
 
 from django.urls import path
 
@@ -47,6 +50,13 @@ from .user_management_views import (
 from .menu_access_views import MenuAccessManagementView
 
 urlpatterns = [
+    path("auth/registration-requests/", RegistrationRequestView.as_view(), name="registration-request"),
+    path("registration-management/", RegistrationManagementView.as_view(), name="registration-list"),
+    path("registration-management/<int:request_id>/approve/", RegistrationReviewView.as_view(approve=True), name="registration-approve"),
+    path("registration-management/<int:request_id>/reject/", RegistrationReviewView.as_view(), name="registration-reject"),
+    path("documents/access-options/", DocumentAccessOptionsView.as_view(), name="document-access-options"),
+    path("documents/<int:document_id>/revisions/by-id/<int:revision_id>/", DocumentRevisionDeleteView.as_view(), name="revision-delete"),
+    path("documents/<int:document_id>/access/", DocumentAccessManagementView.as_view(), name="document-access-management"),
     path("csrf/", csrf_token_view, name="csrf-token"),
 
     path("auth/me/", me_view, name="auth-me"),

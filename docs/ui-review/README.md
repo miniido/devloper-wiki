@@ -1,5 +1,15 @@
 # Developer Wiki UI/UX 리팩터링 검증
 
+관리자 승인형 회원가입: [구현·마이그레이션·검증 결과](registration-completion.md).
+
+작성·수정 권한 설정 및 관리자 이력 삭제: [최신 구현·검증 기록](edit-access-and-history-completion.md).
+
+문서별 CUSTOM 권한 관리: [구현·테스트 결과](document-access-completion.md).
+
+메뉴별 그룹 권한 기능 완성 및 실제 API 검증: [최신 변경 기록](menu-access-completion.md).
+
+2026-10-30 사용자 관리·메뉴별 권한 UI 통합은 [추가 변경 기록](admin-ui.md)을 참고하세요. 아래는 최초 리팩터링 당시의 검증 기록입니다.
+
 ## 변경 내용
 
 - `frontend/src/App.tsx`: 헤더 Breadcrumb, 실제 사용자 정보, 선택 상태와 펼침 상태 분리, 다단계 탐색, 단일 하단 새 문서 버튼, 권한별 관리 섹션, 문서 메타데이터·버전, 검색 빈 상태, 저장 중 탐색 방지. 편집기·첨부파일·이력의 별도 Wrapper 유지.

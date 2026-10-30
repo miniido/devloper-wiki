@@ -79,9 +79,9 @@ class MenuAccessManagementView(APIView):
 
         menu = get_object_or_404(Menu, pk=menu_id)
 
-        groups = list(
-            Group.objects.filter(name__in=MANAGED_GROUPS)
-            .order_by("name")
+        groups = sorted(
+            Group.objects.filter(name__in=MANAGED_GROUPS),
+            key=lambda group: MANAGED_GROUPS.index(group.name),
         )
 
         return Response(access_data(menu, groups))
@@ -93,6 +93,12 @@ class MenuAccessManagementView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        if not isinstance(request.data, dict):
+            return Response(
+                {"detail": "요청 본문은 객체여야 합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         incoming = request.data.get("groups")
 
         if not isinstance(incoming, list):
@@ -101,9 +107,9 @@ class MenuAccessManagementView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        groups = list(
-            Group.objects.filter(name__in=MANAGED_GROUPS)
-            .order_by("name")
+        groups = sorted(
+            Group.objects.filter(name__in=MANAGED_GROUPS),
+            key=lambda group: MANAGED_GROUPS.index(group.name),
         )
         group_map = {group.id: group for group in groups}
 

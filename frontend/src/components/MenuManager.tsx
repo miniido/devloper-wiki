@@ -1,7 +1,13 @@
 import Icon from "./Icon";
-import { useEffect, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState } from "react";
+import type { Ref } from "react";
 import { sortMenusAsTree, menuAncestors } from "../menuTree";
 import MenuAccessEditor from "./MenuAccessEditor";
+import type { MenuAccessEditorHandle } from "./MenuAccessEditor";
+
+export interface MenuManagerHandle {
+  confirmLeave: () => boolean;
+}
 
 interface MenuItem {
   id: number;
@@ -15,11 +21,13 @@ interface ManagementData {
   can_add: boolean;
   can_change: boolean;
   can_delete: boolean;
+  can_manage_access: boolean;
   menus: MenuItem[];
 }
 
 interface Props {
   onClose: () => void;
+  navigationRef: Ref<MenuManagerHandle>;
   onChanged: () => Promise<void>;
 }
 
@@ -45,12 +53,20 @@ function csrfToken() {
   return cookie ? decodeURIComponent(cookie.slice("csrftoken=".length)) : "";
 }
 
-export default function MenuManager({ onClose, onChanged }: Props) {
+export default function MenuManager({ onClose, onChanged, navigationRef }: Props) {
+  const accessRef = useRef<MenuAccessEditorHandle>(null);
+  const [accessSaving, setAccessSaving] = useState(false);
   const [data, setData] = useState<ManagementData | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [form, setForm] = useState<FormValues>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  function confirmLeave() {
+    return !busy && (accessRef.current?.confirmLeave() ?? true);
+  }
+
+  useImperativeHandle(navigationRef, () => ({ confirmLeave }));
 
   async function loadMenus() {
     const response = await fetch("/api/menu-management/");
@@ -83,6 +99,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
   }, []);
 
   function chooseMenu(menu: MenuItem) {
+    if (menu.id === selected || !confirmLeave()) return;
     setSelected(menu.id);
     setForm({
       name: menu.name,
@@ -94,6 +111,11 @@ export default function MenuManager({ onClose, onChanged }: Props) {
   }
 
   function newMenu() {
+    if (!confirmLeave()) return;
+    resetForm();
+  }
+
+  function resetForm() {
     setSelected(null);
     setForm({ ...EMPTY_FORM });
     setError("");
@@ -141,7 +163,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
   }
 
   async function saveMenu() {
-    if (!form.name.trim() || busy) return;
+    if (!form.name.trim() || !confirmLeave()) return;
 
     setBusy(true);
     setError("");
@@ -157,7 +179,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
 
       await loadMenus();
       await onChanged();
-      newMenu();
+      resetForm();
     } catch (err) {
       setError(err instanceof Error ? err.message : "저장 실패");
     } finally {
@@ -166,7 +188,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
   }
 
   async function deleteMenu() {
-    if (selected === null || busy) return;
+    if (selected === null || !confirmLeave()) return;
 
     const menu = data?.menus.find((m) => m.id === selected);
 
@@ -180,7 +202,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
 
       await loadMenus();
       await onChanged();
-      newMenu();
+      resetForm();
     } catch (err) {
       setError(err instanceof Error ? err.message : "삭제 실패");
     } finally {
@@ -195,7 +217,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
           <h1>메뉴 관리</h1>
           <p>위키의 메뉴 구조와 공개 범위를 설정합니다.</p>
         </div>
-        <button className="text-button" onClick={onClose}>
+        <button className="text-button" disabled={busy || accessSaving} onClick={() => { if (confirmLeave()) onClose(); }}>
           닫기
         </button>
       </div>
@@ -210,7 +232,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
             <div className="menu-manager-list-heading">
               <strong>메뉴 목록</strong>
               {data.can_add && (
-                <button type="button" onClick={newMenu}>
+                <button type="button" disabled={busy || accessSaving} onClick={newMenu}>
                   + 추가
                 </button>
               )}
@@ -224,6 +246,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
                 style={{
                   paddingLeft: 12 + depth * 18,
                 }}
+                disabled={busy || accessSaving}
                 onClick={() => chooseMenu(menu)}
               >
                 <span>{menu.name}</span>
@@ -240,7 +263,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
               id="menu-name"
               value={form.name}
               disabled={
-                busy || (selected === null ? !data.can_add : !data.can_change)
+                busy || accessSaving || (selected === null ? !data.can_add : !data.can_change)
               }
               maxLength={100}
               onChange={(e) =>
@@ -257,7 +280,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
               id="menu-parent"
               value={form.parent ?? ""}
               disabled={
-                busy || (selected === null ? !data.can_add : !data.can_change)
+                busy || accessSaving || (selected === null ? !data.can_add : !data.can_change)
               }
               onChange={(e) =>
                 setForm((prev) => ({
@@ -289,7 +312,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
               min={0}
               value={form.sort_order}
               disabled={
-                busy || (selected === null ? !data.can_add : !data.can_change)
+                busy || accessSaving || (selected === null ? !data.can_add : !data.can_change)
               }
               onChange={(e) =>
                 setForm((prev) => ({
@@ -307,7 +330,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
                 type="checkbox"
                 checked={form.is_public}
                 disabled={
-                  busy || (selected === null ? !data.can_add : !data.can_change)
+                  busy || accessSaving || (selected === null ? !data.can_add : !data.can_change)
                 }
                 onChange={(e) =>
                   setForm((prev) => ({
@@ -329,7 +352,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
                 <button
                   type="button"
                   className="menu-manager-danger"
-                  disabled={busy}
+                  disabled={busy || accessSaving}
                   onClick={() => void deleteMenu()}
                 >
                   메뉴 삭제
@@ -342,7 +365,7 @@ export default function MenuManager({ onClose, onChanged }: Props) {
                 <button
                   type="button"
                   className="primary-button"
-                  disabled={busy || !form.name.trim()}
+                  disabled={busy || accessSaving || !form.name.trim()}
                   onClick={() => void saveMenu()}
                 >
                   <Icon name="save" />
@@ -350,10 +373,12 @@ export default function MenuManager({ onClose, onChanged }: Props) {
                 </button>
               )}
             </div>
-            {selected !== null && (
+            {selected !== null && data.can_manage_access && (
               <MenuAccessEditor
                 key={selected}
                 menuId={selected}
+                navigationRef={accessRef}
+                onSavingChange={setAccessSaving}
                 isPublic={
                   data.menus.find((menu) => menu.id === selected)?.is_public ??
                   false

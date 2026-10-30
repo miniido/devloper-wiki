@@ -1592,3 +1592,10 @@
 
 
 }
+
+.revision-row { display: flex; align-items: center; gap: 6px; }
+.revision-row > .revision-item { flex: 1; min-width: 0; }
+.revision-delete { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 30px; min-height: 30px; padding: 6px; border: 0; border-radius: 5px; background: transparent; color: #9a8279; font-size: 10px; flex-shrink: 0; }
+.revision-delete:hover:not(:disabled) { color: #a04f40; background: #fbefeb; }
+.revision-delete .icon { width: 14px; height: 14px; }
+.revision-notice { color: #657459; font-size: 12px; line-height: 1.7; }

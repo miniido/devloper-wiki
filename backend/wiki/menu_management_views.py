@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Menu, Document
+from .menu_access_views import can_manage_access
 
 def menu_data(menu):
     return {
@@ -109,6 +110,7 @@ class MenuManagementListView(APIView):
 
         return Response({
             **permissions,
+            "can_manage_access": can_manage_access(request.user),
             "menus": [menu_data(menu) for menu in menus],
         })
 

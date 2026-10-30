@@ -1,3 +1,4 @@
+import RegistrationForm from "./RegistrationForm";
 import { useState } from "react";
 
 interface LoginPageProps {
@@ -15,6 +16,7 @@ function getCsrfToken() {
 }
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
+  const [registering, setRegistering] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -77,6 +79,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           <span>Developer Wiki</span>
         </div>
 
+        {registering ? <RegistrationForm onBack={() => setRegistering(false)} /> : <>
         <div className="login-heading">
           <h1>다시 오신 것을 환영합니다.</h1>
           <p>팀의 개발 기록을 이어서 확인해 보세요.</p>
@@ -111,6 +114,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           </button>
         </form>
 
+        <div className="registration-entry"><span>아직 계정이 없으신가요?</span><button className="text-button" disabled={loading} onClick={() => { setPassword(""); setError(""); setRegistering(true); }}>회원가입 신청</button></div>
+        </>}
         <p className="login-footer">사내 개발자 전용 서비스</p>
       </div>
     </div>

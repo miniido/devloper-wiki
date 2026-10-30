@@ -68,6 +68,12 @@ def accessible_documents(user, action="view"):
     if action not in ("view", "edit"):
         raise ValueError(f"지원하지 않는 권한: {action}")
 
+    # 모든 문서 관련 API(첨부파일/이미지/이력 포함)의 전역 모델 권한 검사.
+    if not user.has_perm("wiki.view_document"):
+        return Document.objects.none()
+    if action == "edit" and not user.has_perm("wiki.change_document"):
+        return Document.objects.none()
+
     # 문서에 접근하려면 메뉴에서도 동일한 작업이 허용되어야 함
     menu_ids = accessible_menus(
         user,
@@ -100,3 +106,27 @@ def has_document_access(user, document_id, action="view"):
     return accessible_documents(user, action).filter(
         pk=document_id
     ).exists()
+
+def can_manage_document_access(user, document):
+    """권한 편집은 관리자 역할과 해당 문서의 실제 수정 권한이 모두 필요하다."""
+    if not user.is_authenticated or not user.is_active:
+        return False
+    if user.is_superuser:
+        return True
+    return (
+        user.groups.filter(name="WIKI_ADMIN").exists()
+        and has_document_access(user, document.pk, "edit")
+    )
+
+
+def can_configure_document_creation(user, menu_id):
+    if not user.is_authenticated or not user.is_active:
+        return False
+    return (
+        (user.is_superuser or (
+            user.groups.filter(name="WIKI_ADMIN").exists()
+            and user.has_perms(["wiki.view_document", "wiki.change_document"])
+        ))
+        and user.has_perm("wiki.add_document")
+        and has_menu_access(user, menu_id, "create")
+    )

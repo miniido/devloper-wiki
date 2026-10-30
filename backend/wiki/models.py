@@ -189,3 +189,39 @@ class DocumentRevision(models.Model):
 
     def __str__(self):
         return f"{self.document_id} - v{self.version}"
+
+
+class RegistrationRequest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "승인 대기"
+        APPROVED = "APPROVED", "승인 완료"
+        REJECTED = "REJECTED", "거절"
+
+    username = models.CharField(max_length=150)
+    first_name = models.CharField(max_length=150)
+    last_name = models.CharField(max_length=150)
+    password_hash = models.CharField(max_length=128, editable=False)
+    reason = models.TextField(max_length=2000, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        null=True, blank=True, related_name="reviewed_registrations",
+    )
+
+    class Meta:
+        ordering = ["-requested_at", "-id"]
+        indexes = [models.Index(fields=["status", "-requested_at"], name="registration_status_date_idx")]
+        constraints = [
+            models.UniqueConstraint(fields=["username"], condition=models.Q(status="PENDING"), name="unique_pending_registration_username"),
+            models.CheckConstraint(condition=(
+                models.Q(status="PENDING", reviewed_at__isnull=True, reviewed_by__isnull=True)
+                & ~models.Q(password_hash="")
+            ) | (
+                models.Q(status__in=["APPROVED", "REJECTED"], password_hash="", reviewed_at__isnull=False, reviewed_by__isnull=False)
+            ), name="registration_review_state_valid"),
+        ]
+
+    def __str__(self):
+        return f"{self.username} / {self.status}"

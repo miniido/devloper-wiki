@@ -1,0 +1,13 @@
+.registration-entry { display: flex; align-items: center; justify-content: center; gap: 12px; padding-top: 22px; margin-top: 24px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+.registration-entry button { color: #485440; }
+.registration-form .registration-name-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.registration-name-fields > div, .registration-password-field { display: flex; flex-direction: column; min-width: 0; }
+.registration-required, .registration-optional { color: var(--muted); font-size: 10px; font-weight: 400; margin-left: 4px; }
+.registration-form textarea { width: 100%; resize: vertical; min-height: 84px; max-height: 240px; border: 1px solid #dcdfd4; border-radius: 5px; padding: 10px 12px; font-family: inherit; font-size: 12px; color: var(--text); }
+.registration-form input:disabled, .registration-form textarea:disabled { background: var(--sidebar-bg); }
+.registration-form .registration-help { color: var(--muted); font-size: 11px; line-height: 1.8; margin: 0 0 20px; }
+.registration-form textarea + .registration-help { margin-top: 12px; }
+.registration-form .registration-back { justify-content: center; margin-top: 14px; }
+.registration-complete { display: grid; justify-items: start; gap: 20px; }
+.registration-complete p { margin: 0; line-height: 1.9; font-size: 13px; color: var(--muted); }
+.registration-form input[aria-invalid="true"] { border-color: #bd8a7c; }

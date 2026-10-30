@@ -92,7 +92,7 @@ class WikiRegressionTests(TestCase):
             self.assertEqual(response.status_code, 201)
             preview = self.client.get(f"/api/attachments/{response.json()['id']}/preview/")
             self.assertEqual(preview.status_code, 200)
-            preview.close()
+            self.assertTrue(b"".join(preview.streaming_content))
             self.assertEqual(len(self.client.get(url).json()), 1)
             self.client.force_login(self.viewer)
             self.assertEqual(self.client.delete(f"/api/attachments/{attachment['id']}/").status_code, 403)

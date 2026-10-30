@@ -35,6 +35,7 @@ from .access import (
     has_menu_access,
 )
 from .revisions import save_revision, ensure_baseline
+from .document_access_views import apply_access_settings
 
 @ensure_csrf_cookie
 def csrf_token_view(request):
@@ -200,6 +201,12 @@ class DocumentDetailView(generics.RetrieveUpdateAPIView):
                     document,
                     user=request.user,
                 )
+            elif "access_groups" in serializer.validated_data:
+                apply_access_settings(
+                    locked, serializer.validated_data["use_custom_permissions"],
+                    serializer.validated_data["access_groups"],
+                )
+                document = locked
             else:
                 document = locked
 

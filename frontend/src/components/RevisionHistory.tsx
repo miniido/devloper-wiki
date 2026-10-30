@@ -1,10 +1,11 @@
-import { useEffect,useState } from "react";
+import { useEffect,useRef,useState } from "react";
 import type { PartialBlock } from "@blocknote/core";
 import WikiEditor from "./WikiEditor";
 import Icon from "./Icon";
 
 interface Revision {
   id: number;
+  can_delete?: boolean;
   version: number;
   title: string;
   menu: number;
@@ -17,15 +18,27 @@ interface Props {
   documentId: number;
   currentVersion: number;
   canEdit: boolean;
+  canDelete?: boolean;
   onRestored: () => Promise<void>;
+}
+
+async function fetchRevisions(documentId: number, signal?: AbortSignal): Promise<Revision[]> {
+  const response = await fetch(`/api/documents/${documentId}/revisions/`, { credentials: "same-origin", signal });
+  if (!response.ok) throw new Error(`수정 이력 조회 실패 (${response.status})`);
+  const data: Revision[] = await response.json();
+  return data.sort((a, b) => b.version - a.version);
 }
 
 export default function RevisionHistory({
   documentId,
   currentVersion,
   canEdit,
+  canDelete = false,
   onRestored,
 }: Props) {
+  const mutationRef = useRef(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [notice, setNotice] = useState("");
   const [expanded,setExpanded]=useState(false);
   const [loaded,setLoaded]=useState(false);
   const [revisions,setRevisions]=useState<Revision[]>([]);
@@ -38,16 +51,7 @@ export default function RevisionHistory({
     if(!expanded) return;
     const controller=new AbortController();
 
-    fetch(`/api/documents/${documentId}/revisions/`,{
-      credentials: "same-origin",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if(!response.ok) {
-          throw new Error(`수정 이력 조회 실패 (${response.status})`);
-        }
-        return response.json() as Promise<Revision[]>;
-      })
+    fetchRevisions(documentId, controller.signal)
       .then((data) => {
         if(!controller.signal.aborted) {
           setRevisions([...data].sort((a,b) => b.version-a.version));
@@ -62,6 +66,7 @@ export default function RevisionHistory({
   },[documentId,currentVersion,expanded]);
 
   async function openRevision(version: number) {
+    if (mutationRef.current || loadingVersion !== null) return;
     setLoadingVersion(version);
     setError("");
 
@@ -86,7 +91,7 @@ export default function RevisionHistory({
   }
 
   async function restoreRevision() {
-    if(!selected||restoring||!canEdit) return;
+    if(!selected||mutationRef.current||loadingVersion !== null||!canEdit) return;
 
     if(
       !window.confirm(
@@ -95,7 +100,9 @@ export default function RevisionHistory({
     )
       return;
 
+    mutationRef.current = true;
     setRestoring(true);
+    setNotice("");
     setError("");
 
     try {
@@ -135,7 +142,39 @@ export default function RevisionHistory({
     } catch(err) {
       setError(err instanceof Error? err.message:"복구 오류");
     } finally {
+      mutationRef.current = false;
       setRestoring(false);
+    }
+  }
+
+  async function deleteRevision(revision: Revision) {
+    if (!canDelete || mutationRef.current || loadingVersion !== null || revision.version >= currentVersion || revisions.length <= 1) return;
+    if (!window.confirm(`v${revision.version} 수정 이력을 삭제할까요?\n삭제한 이력은 복구할 수 없습니다. 현재 문서 내용은 유지됩니다.`)) return;
+    mutationRef.current = true;
+    setDeletingId(revision.id);
+    setError("");
+    setNotice("");
+    try {
+      const csrf = await fetch("/api/csrf/", { credentials: "same-origin" });
+      if (!csrf.ok) throw new Error("보안 토큰 발급에 실패했습니다.");
+      const token = document.cookie.split("; ").find((item) => item.startsWith("csrftoken="))?.slice("csrftoken=".length);
+      const response = await fetch(`/api/documents/${documentId}/revisions/by-id/${revision.id}/`, {
+        method: "DELETE", credentials: "same-origin", headers: { "X-CSRFToken": decodeURIComponent(token ?? "") },
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.detail || `이력 삭제 실패 (${response.status})`);
+      }
+      setRevisions((previous) => previous.filter((item) => item.id !== revision.id));
+      if (selected?.id === revision.id) setSelected(null);
+      setNotice(`v${revision.version} 수정 이력이 삭제되었습니다.`);
+      try { setRevisions(await fetchRevisions(documentId)); }
+      catch { setError("이력은 삭제되었지만 목록 갱신에 실패했습니다. 이력을 다시 열어 주세요."); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "이력 삭제 실패");
+    } finally {
+      mutationRef.current = false;
+      setDeletingId(null);
     }
   }
 
@@ -157,19 +196,19 @@ export default function RevisionHistory({
           <span>{revisions.length}개 버전</span>
         </div>
 
-        {error&&<p className="attachment-error">{error}</p>}
+        {error&&<p className="attachment-error" role="alert">{error}</p>}
+        {notice && <p className="revision-notice" role="status">{notice}</p>}
 
         {!loaded&&!error? <p className="hint" role="status">수정 이력을 불러오는 중…</p>:revisions.length===0? (
           <p className="hint">아직 저장된 수정 이력이 없습니다.</p>
         ):(
           <div className="revision-list">
             {revisions.map((revision) => (
-              <button
-                key={revision.id}
+              <div className="revision-row" key={revision.id}><button
                 type="button"
                 className={`revision-item ${selected?.version===revision.version? "active":""
                   }`}
-                disabled={loadingVersion!==null||restoring}
+                disabled={loadingVersion!==null||restoring||deletingId!==null}
                 aria-pressed={selected?.version===revision.version}
                 onClick={() => void openRevision(revision.version)}
               >
@@ -189,6 +228,8 @@ export default function RevisionHistory({
                   <span className="revision-loading">불러오는 중...</span>
                 )}
               </button>
+              {canDelete && revision.can_delete !== false && revision.version < currentVersion && revisions.length > 1 && <button type="button" className="revision-delete" aria-label={`v${revision.version} 이력 삭제`} title="이력 삭제 (복구 불가)" disabled={restoring || deletingId !== null || loadingVersion !== null} onClick={() => void deleteRevision(revision)}><Icon name="trash" />{deletingId === revision.id && <span>삭제 중…</span>}</button>}
+              </div>
             ))}
           </div>
         )}
@@ -215,7 +256,7 @@ export default function RevisionHistory({
                 <button
                   type="button"
                   className="secondary-button"
-                  disabled={restoring}
+                  disabled={restoring || deletingId !== null || loadingVersion !== null}
                   onClick={() => void restoreRevision()}
                 >
                   {restoring? "복구 중...":"이 버전으로 복구"}

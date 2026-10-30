@@ -18,8 +18,10 @@ fs.mkdirSync(output, { recursive: true });
   const req=route.request(); const url=new URL(req.url()); const u=url.pathname; requests.push(`${req.method()} ${u}`);
   let body={};
   if(u==='/api/auth/me/') body={id:1,username:'minjeong',role,role_label:role==='SYSTEM_ADMIN'?'관리자':role==='AUTHOR'?'작성자':'열람자',can_manage_menus:role==='SYSTEM_ADMIN'};
+  else if(u==='/api/user-management/') { if(role!=='SYSTEM_ADMIN') return route.fulfill({status:403,contentType:'application/json',body:JSON.stringify({detail:'접근 권한이 없습니다.'})}); body={users:[],roles:['WIKI_ADMIN','AUTHOR','VIEWER']}; }
+  else if(u.endsWith('/access/')) body={menu_id:3,menu_name:'Django',is_public:true,groups:[]};
   else if(u==='/api/menus/') body=menus.map(m=>({...m,can_create:role==='VIEWER'?false:m.can_create}));
-  else if(u==='/api/menu-management/') body={can_add:true,can_change:true,can_delete:true,menus:menus.map(m=>({...m,is_public:true}))};
+  else if(u==='/api/menu-management/') body={can_add:true,can_change:true,can_delete:true,can_manage_access:true,menus:menus.map(m=>({...m,is_public:true}))};
   else if(u.includes('/revisions/') && u.endsWith('/restore/')) {doc={...doc,title:'이전 개발 가이드',version:3};body={version:3};}
   else if(u.includes('/revisions/1/')) body={...revisions[1],content:[{type:'paragraph',content:'이전 버전 본문'}]};
   else if(u.includes('/revisions/')) body=u.endsWith('/revisions/')?revisions:{...revisions[0],content:doc.content};

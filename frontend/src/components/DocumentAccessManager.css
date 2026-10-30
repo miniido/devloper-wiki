@@ -1,0 +1,26 @@
+.document-access-manager { margin: 0 0 32px; padding: 22px 0 24px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.document-access-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.document-access-heading h2 { margin: 0; font-size: 14px; font-weight: 650; }
+.document-access-heading > button { flex-shrink: 0; }
+.document-access-mode { display: grid; gap: 4px; margin: 0; padding: 0; border: 0; }
+.document-access-mode legend { margin-bottom: 10px; color: var(--muted); font-size: 11px; }
+.document-access-mode label { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; cursor: pointer; }
+.document-access-mode input { margin: 3px 0 0; width: 15px; height: 15px; accent-color: #4e5c43; flex-shrink: 0; }
+.document-access-mode label > span { display: grid; gap: 5px; }
+.document-access-mode strong { font-size: 12px; font-weight: 550; }
+.document-access-mode small { color: var(--muted); font-size: 11px; line-height: 1.7; }
+.document-access-mode:disabled label { cursor: not-allowed; opacity: .6; }
+.document-access-retry { margin-top: 18px; }
+.document-access-manager .menu-access-hint { margin-top: 14px; }
+.document-access-manager .menu-access-table { min-width: 280px; }
+.document-access-badge { font-size: 10px; font-weight: 500; color: #747a6a; border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; }
+@media (max-width: 480px) { .document-topbar > .document-actions { gap: 4px; } .document-topbar .document-action-button { padding-inline: 8px; } }
+
+.document-access-result { max-width: 1000px; margin: 0 auto 24px; }
+.document-access-manager > .menu-access-notice + .document-access-mode, .document-access-manager > .menu-access-error + .document-access-mode { margin-top: 18px; }
+
+.document-access-mode-label { padding-left: 5px; border-left: 1px solid var(--border); color: var(--muted); font-size: 10px; font-weight: 400; }
+@media (max-width: 768px) {
+  .document-toolbar { flex-wrap: wrap; gap: 14px; }
+  .document-toolbar .document-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+}
