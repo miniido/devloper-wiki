@@ -38,6 +38,14 @@ from .menu_management_views import (
     MenuManagementDetailView,
 )
 
+from .user_management_views import (
+    UserManagementListView,
+    UserManagementDetailView,
+    UserPasswordResetView,
+)
+
+from .menu_access_views import MenuAccessManagementView
+
 urlpatterns = [
     path("csrf/", csrf_token_view, name="csrf-token"),
 
@@ -91,5 +99,25 @@ urlpatterns = [
     path(
         "menu-management/<int:menu_id>/",
         MenuManagementDetailView.as_view(),
+    ),
+    path(
+        "user-management/",
+        UserManagementListView.as_view(),
+        name="user-management",
+    ),
+    path(
+        "user-management/<int:user_id>/",
+        UserManagementDetailView.as_view(),
+        name="user-management-detail",
+    ),
+    path(
+        "user-management/<int:user_id>/reset-password/",
+        UserPasswordResetView.as_view(),
+        name="user-password-reset",
+    ),
+    path(
+        "menu-management/<int:menu_id>/access/",
+        MenuAccessManagementView.as_view(),
+        name="menu-access-management",
     ),
 ]

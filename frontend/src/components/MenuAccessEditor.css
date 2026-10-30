@@ -1,0 +1,130 @@
+.menu-access-editor {
+  margin-top: 30px;
+  padding-top: 24px;
+  border-top: 1px solid #e9ece9;
+}
+
+.menu-access-heading h3 {
+  margin: 0 0 7px;
+  color: #343b36;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.menu-access-heading p,
+.menu-access-hint,
+.menu-access-muted {
+  margin: 0;
+  color: #929991;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.menu-access-table-wrap {
+  margin-top: 20px;
+  overflow-x: auto;
+  border: 1px solid #e8ebe8;
+  border-radius: 6px;
+}
+
+.menu-access-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.menu-access-table thead {
+  background: #f8f9f7;
+}
+
+.menu-access-table th,
+.menu-access-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #edf0ed;
+}
+
+.menu-access-table tr:last-child th,
+.menu-access-table tr:last-child td {
+  border-bottom: none;
+}
+
+.menu-access-table th:first-child {
+  text-align: left;
+}
+
+.menu-access-table thead th {
+  color: #7e877f;
+  font-weight: 550;
+}
+
+.menu-access-table tbody th {
+  color: #444c45;
+  font-weight: 550;
+}
+
+.menu-access-table td,
+.menu-access-table thead th:not(:first-child) {
+  text-align: center;
+}
+
+.menu-access-table input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #50675a;
+  cursor: pointer;
+}
+
+.menu-access-table input:disabled {
+  cursor: not-allowed;
+}
+
+.menu-access-hint {
+  margin-top: 10px;
+}
+
+.menu-access-info,
+.menu-access-error,
+.menu-access-notice {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.menu-access-info {
+  background: #f4f6f2;
+  color: #627467;
+}
+
+.menu-access-error {
+  background: #fff1ef;
+  color: #a04c43;
+}
+
+.menu-access-notice {
+  background: #f0f6f0;
+  color: #4c7659;
+}
+
+.menu-access-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.menu-access-actions .primary-button {
+  min-height: 32px;
+  padding: 7px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.menu-access-actions .primary-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
